@@ -1,0 +1,306 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String
+  role          UserRole  @default(ANALYST)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  cases         Case[]
+  evidences     Evidence[]
+  activities    Activity[]
+  reports       Report[]
+  
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  INVESTIGATOR
+  ANALYST
+  VIEWER
+}
+
+// Case Management
+model Case {
+  id              String      @id @default(cuid())
+  caseNumber      String      @unique
+  title           String
+  description     String?
+  status          CaseStatus  @default(OPEN)
+  priority        Priority    @default(MEDIUM)
+  incidentDate    DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  closedAt        DateTime?
+  
+  assignedToId    String
+  assignedTo      User        @relation(fields: [assignedToId], references: [id])
+  
+  evidences       Evidence[]
+  reports         Report[]
+  activities      Activity[]
+  tags            CaseTag[]
+  
+  @@map("cases")
+  @@index([status])
+  @@index([assignedToId])
+}
+
+enum CaseStatus {
+  OPEN
+  IN_PROGRESS
+  UNDER_REVIEW
+  CLOSED
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Evidence Management
+model Evidence {
+  id                String          @id @default(cuid())
+  evidenceNumber    String          @unique
+  name              String
+  description       String?
+  type              EvidenceType
+  status            EvidenceStatus  @default(COLLECTED)
+  hashMD5           String?
+  hashSHA1          String?
+  hashSHA256        String?
+  fileSize          BigInt?
+  filePath          String?
+  collectionDate    DateTime
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  caseId            String
+  case              Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  collectedById     String
+  collectedBy       User            @relation(fields: [collectedById], references: [id])
+  
+  chainOfCustody    ChainOfCustody[]
+  analysisResults   AnalysisResult[]
+  metadata          EvidenceMetadata[]
+  
+  @@map("evidences")
+  @@index([caseId])
+  @@index([status])
+}
+
+enum EvidenceType {
+  DISK_IMAGE
+  MEMORY_DUMP
+  NETWORK_CAPTURE
+  MOBILE_DEVICE
+  LOG_FILE
+  DOCUMENT
+  EMAIL
+  DATABASE
+  OTHER
+}
+
+enum EvidenceStatus {
+  COLLECTED
+  IN_ANALYSIS
+  ANALYZED
+  ARCHIVED
+  DESTROYED
+}
+
+// Chain of Custody
+model ChainOfCustody {
+  id              String    @id @default(cuid())
+  action          String
+  location        String?
+  notes           String?
+  timestamp       DateTime  @default(now())
+  
+  evidenceId      String
+  evidence        Evidence  @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  
+  handlerId       String
+  handler         User      @relation(fields: [handlerId], references: [id])
+  
+  @@map("chain_of_custody")
+  @@index([evidenceId])
+}
+
+model User {
+  id                  String              @id @default(cuid())
+  email               String              @unique
+  name                String?
+  password            String
+  role                UserRole            @default(ANALYST)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  
+  cases               Case[]
+  evidences           Evidence[]
+  activities          Activity[]
+  reports             Report[]
+  chainOfCustodyLogs  ChainOfCustody[]
+  
+  @@map("users")
+}
+
+// Evidence Metadata (key-value pairs)
+model EvidenceMetadata {
+  id          String    @id @default(cuid())
+  key         String
+  value       String
+  
+  evidenceId  String
+  evidence    Evidence  @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  
+  @@map("evidence_metadata")
+  @@index([evidenceId])
+}
+
+// Analysis Results
+model AnalysisResult {
+  id              String          @id @default(cuid())
+  title           String
+  analysisType    AnalysisType
+  findings        String
+  toolsUsed       String[]
+  artifacts       Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  
+  evidenceId      String
+  evidence        Evidence        @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  
+  @@map("analysis_results")
+  @@index([evidenceId])
+}
+
+enum AnalysisType {
+  FILE_SYSTEM
+  REGISTRY
+  NETWORK
+  MEMORY
+  TIMELINE
+  MALWARE
+  METADATA
+  ENCRYPTION
+  DELETED_FILES
+  OTHER
+}
+
+// Reports
+model Report {
+  id              String        @id @default(cuid())
+  title           String
+  reportType      ReportType
+  content         String
+  summary         String?
+  findings        Json?
+  recommendations String?
+  status          ReportStatus  @default(DRAFT)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  publishedAt     DateTime?
+  
+  caseId          String
+  case            Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  authorId        String
+  author          User          @relation(fields: [authorId], references: [id])
+  
+  @@map("reports")
+  @@index([caseId])
+  @@index([status])
+}
+
+enum ReportType {
+  PRELIMINARY
+  TECHNICAL
+  EXECUTIVE
+  FINAL
+}
+
+enum ReportStatus {
+  DRAFT
+  UNDER_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+// Activity Log
+model Activity {
+  id          String    @id @default(cuid())
+  action      String
+  entity      String
+  entityId    String?
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime  @default(now())
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  
+  caseId      String?
+  case        Case?     @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  
+  @@map("activities")
+  @@index([userId])
+  @@index([caseId])
+  @@index([timestamp])
+}
+
+// Case Tags
+model CaseTag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String?
+  
+  cases     Case[]   @relation("CaseToTag")
+  
+  @@map("case_tags")
+}
+
+model Case {
+  id              String      @id @default(cuid())
+  caseNumber      String      @unique
+  title           String
+  description     String?
+  status          CaseStatus  @default(OPEN)
+  priority        Priority    @default(MEDIUM)
+  incidentDate    DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  closedAt        DateTime?
+  
+  assignedToId    String
+  assignedTo      User        @relation(fields: [assignedToId], references: [id])
+  
+  evidences       Evidence[]
+  reports         Report[]
+  activities      Activity[]
+  tags            CaseTag[]   @relation("CaseToTag")
+  
+  @@map("cases")
+  @@index([status])
+  @@index([assignedToId])
+}
